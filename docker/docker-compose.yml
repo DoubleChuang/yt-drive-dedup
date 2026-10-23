@@ -1,0 +1,30 @@
+# Run from this directory (`docker compose run --rm dedup --owned-only`) or from the
+# repo root with `docker compose -f docker/docker-compose.yml ...`.
+#
+# Both services share ../data: token.json and the CSV reports land there.
+
+x-base: &base
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: yt-drive-dedup:latest
+  working_dir: /data
+  user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+  volumes:
+    - ../data:/data
+
+services:
+  dedup:
+    <<: *base
+    entrypoint: ["python", "-m", "ytdd"]
+    environment:
+      GOOGLE_TOKEN_FILE: /data/token.json
+    command: ["--help"]
+
+  auth:
+    <<: *base
+    entrypoint: ["python", "-m", "ytdd.auth"]
+    volumes:
+      - ../data:/data
+      - ../secrets:/secrets:ro
+    command: ["--out", "/data/token.json"]

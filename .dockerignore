@@ -11,5 +11,6 @@ __pycache__
 *.pyc
 .venv
 venv
-README.md
-LICENSE
+
+# README.md is deliberately NOT ignored: pyproject declares it as the package
+# readme, so `pip install .` needs it inside the build context.

@@ -1,8 +1,10 @@
 # yt-drive-dedup
 
-找出 Google Drive 裡「已經上傳到 YouTube」的影片，確認重複後把 Drive 的備份刪掉，回收儲存空間。
+找出 Google Drive 裡「已經上傳到 YouTube」的重複影片，確認重複後把 Drive 的備份刪掉，回收儲存空間。
 
 Find the videos in your Google Drive that are already uploaded to YouTube, verify the match, and trash the redundant Drive copies.
+
+用 Docker 一行指令就能跑，本機不需要安裝 Python 或任何套件。
 
 ---
 
@@ -10,7 +12,7 @@ Find the videos in your Google Drive that are already uploaded to YouTube, verif
 
 手機、相機、行車記錄器會一直往 Drive 塞影片，很可能同一批檔案早就上傳到 YouTube 了，兩邊各佔一份空間。要人工比對幾百支影片並不現實，因為上傳時常會改名，光看檔名對不起來。
 
-這支腳本用三個獨立訊號交叉比對，只有證據夠強才會動手，預設還只把檔案移到垃圾桶（可復原）。
+這支工具用三個獨立訊號交叉比對，只有證據夠強才會動手，預設還只把檔案移到垃圾桶（可復原）。
 
 ## 比對邏輯
 
@@ -33,14 +35,55 @@ Drive 的每個影片檔會跟頻道上**所有**已上傳影片逐一評分：
 - **AMBIG** — 多個 Drive 檔案搶同一支 YouTube 影片且沒有鐵證時，全部排除不刪
 - 其餘不配對
 
+配分與門檻集中在 `MatchPolicy`（`ytdd/domain/matching.py`），調參不用改邏輯。
+
 `--explain` 會把**每一支**影片最接近的 YouTube 候選連分數一起印出來（包含未達門檻的），方便你人工複核。
 
 ## 安全設計
 
 - **預設不刪任何東西。** 不加 `--apply` 就只產出報表。
 - **預設丟垃圾桶，不永久刪除。** 30 天內可從 Drive 網頁還原。要永久刪必須自己加 `--permanent`。
-- **只刪你有權刪的檔案。** 別人分享給你的檔案即使內容重複，Google 也不允許你刪（`403 insufficientFilePermissions`），腳本會列出擁有者後跳過。
+- **只刪你有權刪的檔案。** 別人分享給你的檔案即使內容重複，Google 也不允許你刪（`403 insufficientFilePermissions`），工具會列出擁有者後跳過。
 - **不做模糊猜測。** 沒有達到 STRONG 的配對一律不動。
+
+## 專案結構
+
+分層架構，依賴方向一律由外向內：`presentation → application → domain`，`infrastructure` 只被最外層的 composition root 組裝。
+
+```
+ytdd/
+├── domain/            純邏輯，不 import 任何 Google 套件、不讀檔、不印字
+│   ├── models.py      DriveVideo / YouTubeVideo / Match / Tier
+│   └── matching.py    評分與唯一性規則（MatchPolicy 集中所有參數）
+├── application/       使用案例，只依賴 port，不知道 argparse 與 CSV
+│   ├── ports.py       DriveVideoReader / YouTubeUploadReader / DriveTrashWriter
+│   └── dedup_service.py  scan() 與 delete()
+├── infrastructure/    Google 的實作，唯一會碰到網路與 token 的地方
+│   ├── credentials.py token 解析與 scope 檢查
+│   ├── drive_repository.py
+│   ├── youtube_repository.py
+│   └── oauth.py       兩步驟授權流程
+├── presentation/      輸出與 CLI
+│   ├── cli.py         argparse + composition root
+│   ├── console.py     表格與摘要
+│   ├── csv_report.py  CSV 輸出
+│   └── formatting.py  大小與時長的格式化
+├── __main__.py        python -m ytdd
+└── auth.py            python -m ytdd.auth
+tests/                 22 個單元測試，全部走 fake port，不碰網路
+docker/
+├── Dockerfile
+└── docker-compose.yml
+data/                  token.json 與報表（掛載進容器的 /data）
+secrets/               OAuth client JSON（唯讀掛載）
+```
+
+幾個刻意的決定：
+
+- **domain 沒有任何 I/O。** 評分規則可以在毫秒內被單元測試，不需要 token、不需要網路。
+- **application 只認得 port。** `DedupService` 要的是 `DriveVideoReader` 這種 Protocol，不是 Google SDK。測試時換成假物件即可。
+- **infrastructure 可以被替換。** 要支援第二個影片平台，新增一個 adapter，domain 與 application 不必改。
+- **compose 與 Dockerfile 放在 `docker/`。** 部署產物與程式碼分開，repo 根目錄只留專案本身的檔案；build context 指回 `..`，所以 `.dockerignore` 仍在根目錄（Docker 只讀 context 根的那一份）。
 
 ## 快速開始（Docker，推薦）
 
@@ -48,21 +91,21 @@ Drive 的每個影片檔會跟頻道上**所有**已上傳影片逐一評分：
 
 ```bash
 git clone https://github.com/DoubleChuang/yt-drive-dedup.git
-cd yt-drive-dedup
+cd yt-drive-dedup/docker
 docker compose build
 ```
 
 第一次要先做 Google 授權。把 OAuth client JSON 放進 `secrets/`（該目錄已被 git 忽略）：
 
 ```bash
-cp ~/Downloads/client_secret_xxx.apps.googleusercontent.com.json secrets/client_secret.json
+cp ~/Downloads/client_secret_xxx.apps.googleusercontent.com.json ../secrets/client_secret.json
 ```
 
 授權流程見下方「Google 授權」章節，容器版是：
 
 ```bash
 docker compose run --rm auth --client-secret /secrets/client_secret.json
-docker compose run --rm auth --client-secret /secrets/client_secret.json  --code 'http://localhost:1/?code=4/0A...'
+docker compose run --rm auth --client-secret /secrets/client_secret.json --code 'http://localhost:1/?code=4/0A...'
 ```
 
 拿到 token 之後：
@@ -72,6 +115,8 @@ docker compose run --rm dedup --owned-only     # 先看報表，什麼都不刪
 docker compose run --rm dedup --explain        # 逐支檢視最接近的候選
 docker compose run --rm dedup --apply          # 確認後刪除 STRONG 那批
 ```
+
+不想 `cd` 的話，從 repo 根目錄用 `docker compose -f docker/docker-compose.yml run --rm dedup --owned-only`，或設一次 `COMPOSE_FILE=docker/docker-compose.yml`。
 
 `docker compose run` 後面的參數會直接傳給程式，所以 `--owned-only`、`--apply`、`--ids 3,7,9`、`--show-all` 等用法跟本機執行完全一樣。
 
@@ -96,7 +141,7 @@ secrets/                                ← 唯讀掛載成 /secrets
 LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) docker compose run --rm dedup --owned-only
 ```
 
-或寫進 `.env`：
+或寫進 `docker/.env`：
 
 ```
 LOCAL_UID=1001
@@ -105,10 +150,10 @@ LOCAL_GID=1001
 
 ### 容器細節
 
-- 基底映像 `python:3.12-slim`，只安裝 `requirements.txt` 的三個套件
+- 基底映像 `python:3.12-slim`，相依套件在 build 時裝好，執行時不需要網路安裝
 - 以非特權使用者 `app`（uid 1000）執行，映像內不跑 root
-- `./data` 可寫、`./secrets` 唯讀，不對外開 port
-- 不需要 Dockerfile 以外的建置步驟，`docker compose build` 一次到底
+- `../data` 可寫、`../secrets` 唯讀，不對外開 port
+- 程式以 `pip install --no-deps .` 安裝進 site-packages，所以 `python -m ytdd` 在任何工作目錄都能跑
 
 ## 本機執行（不想用 Docker 的話）
 
@@ -117,8 +162,8 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-需要 Python 3.10 以上。後面的授權與用法把 `docker compose run --rm auth ...` 換成 `python auth.py ...`、
-`docker compose run --rm dedup ...` 換成 `python yt_drive_dedup.py ...` 即可。
+需要 Python 3.10 以上。之後的指令把 `docker compose run --rm dedup ...` 換成 `python -m ytdd ...`、
+`docker compose run --rm auth ...` 換成 `python -m ytdd.auth ...` 即可。
 
 ## 第一次使用：Google 授權
 
@@ -140,7 +185,7 @@ pip install -r requirements.txt
 
 ```bash
 # 本機
-python auth.py --client-secret ~/Downloads/client_secret_xxx.json
+python -m ytdd.auth --client-secret ~/Downloads/client_secret_xxx.json
 
 # Docker（client secret 已放進 secrets/）
 docker compose run --rm auth --client-secret /secrets/client_secret.json
@@ -157,7 +202,7 @@ docker compose run --rm auth --client-secret /secrets/client_secret.json
 
 ```bash
 # 本機
-python auth.py --client-secret ~/Downloads/client_secret_xxx.json \
+python -m ytdd.auth --client-secret ~/Downloads/client_secret_xxx.json \
   --code 'http://localhost:1/?code=4/0A...&scope=...'
 
 # Docker
@@ -165,37 +210,37 @@ docker compose run --rm auth --client-secret /secrets/client_secret.json \
   --code 'http://localhost:1/?code=4/0A...&scope=...'
 ```
 
-完成後會產生 `token.json`（權限 600）：本機版在執行目錄，Docker 版在 `./data/token.json`。
+完成後會產生 `token.json`（權限 600）：本機版在執行目錄，Docker 版在 `data/token.json`。
 兩者都已被 `.gitignore` 排除，不會被 commit。
 
 token 的尋找順序：
-`--token` 參數 > 環境變數 `GOOGLE_TOKEN_FILE` > `~/.hermes/google_token.json` > `./token.json`
+`--token` 參數 > 環境變數 `GOOGLE_TOKEN_FILE`（容器用這個）> `~/.hermes/google_token.json` > `./token.json`
 
 ## 使用方法
 
-Docker 版把下面的 `python yt_drive_dedup.py` 換成 `docker compose run --rm dedup` 即可，參數完全相同。
+Docker 版把下面的 `python -m ytdd` 換成 `docker compose run --rm dedup` 即可，參數完全相同。
 
 ```bash
 # 1. 先看報表，什麼都不刪（預設行為）
-python yt_drive_dedup.py
+python -m ytdd
 
 # 2. 只看自己擁有的影片，略過別人分享給你的
-python yt_drive_dedup.py --owned-only
+python -m ytdd --owned-only
 
 # 3. 逐支檢視最接近的 YouTube 候選（含未達門檻的），人工複核用
-python yt_drive_dedup.py --owned-only --explain
+python -m ytdd --owned-only --explain
 
 # 4. 確認報表無誤後，把 STRONG 那批移到垃圾桶
-python yt_drive_dedup.py --apply
+python -m ytdd --apply
 
 # 5. 只想刪報表上第 3、7、9 筆
-python yt_drive_dedup.py --apply --ids 3,7,9
+python -m ytdd --apply --ids 3,7,9
 
 # 6. 順便列出未配對的 Drive 影片與只在 YouTube 上的影片
-python yt_drive_dedup.py --show-all
+python -m ytdd --show-all
 
 # 7. 永久刪除（跳過垃圾桶，無法復原）
-python yt_drive_dedup.py --apply --permanent
+python -m ytdd --apply --permanent
 ```
 
 ### 參數一覽
@@ -209,7 +254,7 @@ python yt_drive_dedup.py --apply --permanent
 | `--explain` | 列出每支影片最接近的 YouTube 候選與分數 |
 | `--show-all` | 額外印出未配對清單（各前 40 筆） |
 | `--token PATH` | 指定 token JSON 路徑 |
-| `--report-dir DIR` | CSV 報表輸出目錄（預設：目前目錄） |
+| `--report-dir DIR` | CSV 報表輸出目錄（預設：目前目錄，容器內為 `/data`） |
 
 ## 輸出
 
@@ -220,6 +265,16 @@ python yt_drive_dedup.py --apply --permanent
 | `yt_drive_dedup_report_owned.csv` | 使用 `--owned-only` 時的報表檔名 |
 
 `evidence` 欄位說明配對是靠哪些訊號成立的：`size=`（大小相同）、`filename=`（原檔名相同）、`filename~`（檔名近似）、`title=`/`title~`（標題相同／相近）、`dur=`/`dur~`（時長相同／相近）。
+
+## 測試
+
+不需要 token、不需要網路、不需要安裝 pytest：
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+測試只驅動 domain 與 application 兩層，用假的 port 實作取代 Google API。
 
 ## 還原
 
@@ -232,7 +287,7 @@ Drive 網頁 → 垃圾桶 → 勾選檔案 → 還原
 ## 已知限制
 
 - 只比對**目前授權帳號自己的頻道**。其他 Google 帳號的頻道要另外授權。
-- 較舊的 YouTube 影片可能沒有 `fileDetails`（原檔名與大小），那些只能用標題與時長比對，準確度較低。腳本執行時會印出有無原檔資訊的數量。
+- 較舊的 YouTube 影片可能沒有 `fileDetails`（原檔名與大小），那些只能用標題與時長比對，準確度較低。
 - 時長由 YouTube 以整秒回報，短片（10 秒內）的時長容忍區間相對寬鬆，因此短片的時長訊號較弱——這也是 STRONG 門檻要求必須有大小或原檔名鐵證的原因。
 - 若原始片段被合併進 `*_stitched` 之類的合輯影片，那屬於「部分使用」而非完整備份，不會被判定為重複。
 - Drive 查詢涵蓋個人雲端硬碟（含分享給你的檔案），不含共用雲端硬碟（Shared Drives）。
@@ -241,14 +296,15 @@ Drive 網頁 → 垃圾桶 → 勾選檔案 → 還原
 
 | 症狀 | 原因與處理 |
 |---|---|
-| `no Google token at ...` | 還沒做授權，執行 `python auth.py` |
+| `no Google token at ...` | 還沒做授權，執行 `python -m ytdd.auth`（容器內 `docker compose run --rm auth`） |
 | `token is missing scope ...` | token 權限不足，刪掉 `token.json` 重新授權 |
 | `403 insufficientFilePermissions` | 檔案不是你擁有的，只有擁有者能刪。用 `--owned-only` 可先過濾掉 |
 | `403 Access Not Configured` | Cloud Console 沒啟用 Drive API 或 YouTube Data API v3 |
 | `403 access_denied` | 帳號沒被加進 test users，到 <https://console.cloud.google.com/auth/audience> 加入 |
 | `quotaExceeded` | YouTube Data API 每日額度用盡，隔天再跑 |
-| 容器寫入 `./data` 權限錯誤 | `./data` 被建立成 root 所有。`sudo chown -R $(id -u):$(id -g) data`，並確認 `LOCAL_UID`/`LOCAL_GID` 與你一致 |
-| `docker compose` 說 build context 太大 | 確認 `.dockerignore` 存在；它會排除 `.git`、產出的 CSV 與 `data/`、`secrets/` |
+| 容器寫入 `data` 權限錯誤 | 目錄被建立成 root 所有。`sudo chown -R $(id -u):$(id -g) data`，並確認 `LOCAL_UID`/`LOCAL_GID` 與你一致 |
+| build 時 `"/README.md": not found` | `.dockerignore` 不可以排除 `README.md`，`pyproject.toml` 把它宣告成 package readme |
+| `docker compose` 說 build context 太大 | 確認根目錄有 `.dockerignore`；它會排除 `.git`、產生的 CSV 與 `data/`、`secrets/` |
 
 ## 授權範圍
 
