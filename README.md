@@ -271,6 +271,18 @@ python -m ytdd backup --limit 6
 python -m ytdd backup --keep-drive
 ```
 
+Docker 版一樣，只是前面接上 `docker compose run`；容器內已用 `GOOGLE_TOKEN_FILE=/data/token.json`
+指定 token，所以不用再帶 `--token`：
+
+```bash
+cd docker
+docker compose run --rm dedup backup --dry-run     # 先看計畫
+docker compose run --rm dedup backup --limit 6     # 上傳今天額度內的 6 支
+```
+
+容器內下載暫存預設在容器自己的 `/tmp`，每支跑完就刪掉；想改放到 volume 上就加
+`--work-dir /data/tmp`。上傳大檔時整支影片會先落在暫存目錄，請確認該位置有足夠空間。
+
 ### 配額是硬限制
 
 `videos.insert` 每支影片花 **1600 配額單位**，新 Project 每天 **10,000 單位** → **一天 6 支**。超過就是 `quotaExceeded`，工具會停下來並告訴你還有幾支沒跑，隔天再執行即可（已上傳的不會重做）。
@@ -301,7 +313,7 @@ python -m ytdd backup --keep-drive
 | `--keep-drive` | 上傳後保留 Drive 原檔 |
 | `--include-review` | 連 REVIEW 的檔案也上傳（可能產生重複） |
 | `--process-timeout SEC` | 等轉檔的秒數，預設 900 |
-| `--work-dir DIR` | 下載暫存目錄，預設系統暫存目錄 |
+| `--work-dir DIR` | 下載暫存目錄，預設系統暫存目錄（容器內為容器的 `/tmp`） |
 | `--token PATH` | 指定 token 路徑 |
 
 **注意這是「有備份」不是「無損備份」**：YouTube 會重新編碼，畫質與原檔不同，也拿不回原始檔案。要保留原檔就加 `--keep-drive`，重要素材建議先另外備份。
