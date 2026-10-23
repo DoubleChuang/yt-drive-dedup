@@ -9,6 +9,7 @@ from __future__ import annotations
 import sys
 from typing import Sequence, TextIO
 
+from ..application.backup_service import BackupPlan, BackupReport
 from ..application.dedup_service import DeletionOutcome, ScanResult
 from ..domain.matching import DEFAULT_POLICY, MatchPolicy, classify, score_pair
 from ..domain.models import DriveVideo, Match, YouTubeVideo
@@ -27,8 +28,12 @@ class ConsoleReporter:
 
     def __init__(self, out: TextIO | None = None) -> None:
         self._out = out or sys.stdout
+        self._progress_bucket: int | None = None
 
     def _write(self, text: str = "") -> None:
+        if self._progress_bucket is not None:
+            print(file=self._out)  # finish an in-place progress line first
+            self._progress_bucket = None
         print(text, file=self._out)
 
     def progress(self, message: str) -> None:
@@ -95,6 +100,60 @@ class ConsoleReporter:
         self._write(f"完成: 成功 {len(outcome.deleted)}, 失敗 {len(outcome.failures)}")
         for failure in outcome.failures:
             self._write(f"  {failure.match.drive.name}: {failure.reason}")
+
+    # -- backup ---------------------------------------------------------
+
+    def backup_plan(self, plan: BackupPlan, *, quota_uploads: int) -> None:
+        self._write()
+        self._write("--- 備份計畫 ---")
+        self._write(
+            f"可上傳            {len(plan.uploadable)} 支（{format_size(plan.upload_bytes)}）"
+        )
+        self._write(f"已在 YouTube      {len(plan.already_on_youtube)} 支（跳過）")
+        if plan.needs_review:
+            self._write(
+                f"疑似已在 YouTube  {len(plan.needs_review)} 支（預設跳過，--include-review 可含）"
+            )
+        self._write(f"別人分享的        {plan.not_owned} 支（不是你的檔案，不處理）")
+        self._write(
+            f"每日配額          {quota_uploads} 支（1600 單位/支，預設 10000 單位/日）"
+        )
+
+        if plan.uploadable:
+            self._write()
+            self._write(f"前 {min(20, len(plan.uploadable))} 支:")
+            for video in plan.uploadable[:20]:
+                self._write(f"  {video.name[:60]:<62} {format_size(video.size):>9}")
+
+    def dry_run_notice(self) -> None:
+        self._write()
+        self._write("(--dry-run：沒有上傳任何東西，也沒有刪除任何檔案)")
+
+    def upload_progress(self, fraction: float) -> None:
+        bucket = int(fraction * 10)
+        if bucket == self._progress_bucket:
+            return
+        self._progress_bucket = bucket
+        print(
+            f"    上傳中 {fraction * 100:5.1f}%", end="", file=self._out, flush=True
+        )
+
+    def backup_report(self, report: BackupReport) -> None:
+        self._write()
+        self._write(
+            f"完成: 上傳 {len(report.uploaded)} 支"
+            f"｜移除 Drive {len(report.removed_from_drive)} 支"
+            f"｜失敗 {len(report.failed)} 支"
+        )
+        if report.stopped_by_quota:
+            self._write(
+                f"配額用盡，還有 {report.not_attempted} 支沒跑；明天額度重置後再執行即可"
+            )
+        for result in report.results:
+            if result.youtube_id:
+                self._write(f"  OK   {result.video.name}  ->  https://youtu.be/{result.youtube_id}")
+            if result.error:
+                self._write(f"  FAIL {result.video.name}: {result.error}")
 
     def footer(self, report_path: str) -> None:
         self._write()

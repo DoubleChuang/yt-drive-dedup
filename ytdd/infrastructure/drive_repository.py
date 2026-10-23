@@ -7,12 +7,16 @@ the application layer honest: it can ask for only one capability.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Sequence
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaIoBaseDownload
 
 from ..domain.models import DriveVideo
+from ..errors import ApiError
 
 VIDEO_QUERY = (
     "trashed = false and ("
@@ -54,6 +58,20 @@ class GoogleDriveRepository:
             page_token = response.get("nextPageToken")
             if not page_token:
                 return videos
+
+    def download_to(self, video_id: str, destination: Path) -> Path:
+        """Stream one video to disk in chunks; never buffer the whole file in memory."""
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        request = self._service.files().get_media(fileId=video_id)
+        try:
+            with destination.open("wb") as handle:
+                downloader = MediaIoBaseDownload(handle, request, chunksize=16 << 20)
+                done = False
+                while not done:
+                    _, done = downloader.next_chunk()
+        except HttpError as exc:
+            raise ApiError(f"下載 {video_id} 失敗: {exc}") from exc
+        return destination
 
     def trash(self, video_id: str) -> None:
         self._service.files().update(fileId=video_id, body={"trashed": True}).execute()

@@ -256,6 +256,52 @@ python -m ytdd --apply --permanent
 | `--token PATH` | 指定 token JSON 路徑 |
 | `--report-dir DIR` | CSV 報表輸出目錄（預設：目前目錄，容器內為 `/data`） |
 
+## 備份到 YouTube（`backup` 子命令）
+
+反過來把 Drive 的影片上傳到 YouTube，成功後再釋放 Drive 空間。這是為了省 Drive 容量，跟上面的「刪除重複」是兩件事。
+
+```bash
+# 先看計畫：會列出可上傳幾支、多少 GB、跳過哪些，不動任何東西
+python -m ytdd backup --dry-run
+
+# 實際執行（預設上傳為 private，成功且轉檔完成後把 Drive 原檔移到垃圾桶）
+python -m ytdd backup --limit 6
+
+# 保留 Drive 原檔，只做 YouTube 多一份備份
+python -m ytdd backup --keep-drive
+```
+
+### 配額是硬限制
+
+`videos.insert` 每支影片花 **1600 配額單位**，新 Project 每天 **10,000 單位** → **一天 6 支**。超過就是 `quotaExceeded`，工具會停下來並告訴你還有幾支沒跑，隔天再執行即可（已上傳的不會重做）。
+
+要一次跑完就得提高配額：Cloud Console → `APIs & Services` → `YouTube Data API v3` → `Quotas` → `Queries per day` → 申請調整。以 39 支計，大約需要 62,400 單位。
+
+### 上傳流程與安全設計
+
+1. 先比對（跟 scan 同一套規則），已確定在 YouTube 上的直接跳過，不浪費配額
+2. 從 Drive 下載到暫存目錄（分塊串流，不會把整個檔案讀進記憶體）
+3. 用可續傳上傳（resumable）送進頻道，預設隱私 `private`
+4. **等 YouTube 回報 `processed` 才刪 Drive 原檔**；逾時或失敗就保留原檔並回報
+5. 刪除只是移到垃圾桶，30 天內可還原
+
+預設不會上傳的三種情況：不是你的檔案、STRONG 已確定在 YouTube、REVIEW 疑似在 YouTube（要含進去請加 `--include-review`）。
+
+### 參數
+
+| 參數 | 說明 |
+|---|---|
+| `--dry-run` | 只列計畫，不上傳不刪除 |
+| `--limit N` | 這次最多上傳幾支（配合每日配額） |
+| `--privacy {private,unlisted,public}` | 上傳後的隱私狀態，預設 `private` |
+| `--keep-drive` | 上傳後保留 Drive 原檔 |
+| `--include-review` | 連 REVIEW 的檔案也上傳（可能產生重複） |
+| `--process-timeout SEC` | 等轉檔的秒數，預設 900 |
+| `--work-dir DIR` | 下載暫存目錄，預設系統暫存目錄 |
+| `--token PATH` | 指定 token 路徑 |
+
+**注意這是「有備份」不是「無損備份」**：YouTube 會重新編碼，畫質與原檔不同，也拿不回原始檔案。要保留原檔就加 `--keep-drive`，重要素材建議先另外備份。
+
 ## 輸出
 
 | 檔案 | 內容 |
@@ -308,10 +354,13 @@ Drive 網頁 → 垃圾桶 → 勾選檔案 → 還原
 
 ## 授權範圍
 
-只請求兩個 scope：
+只請求這三個 scope：
 
 - `https://www.googleapis.com/auth/drive`
 - `https://www.googleapis.com/auth/youtube.readonly`
+- `https://www.googleapis.com/auth/youtube.upload`（只有 `backup` 子命令需要）
+
+只跑 `scan` 時不會用到上傳權限；若現有 token 沒有 `youtube.upload`，`backup --dry-run` 仍可執行，真正上傳前會提示你重新授權。
 
 不讀 Gmail、不讀日曆、不取得通訊錄。token 存在本機，不會上傳到任何地方。
 

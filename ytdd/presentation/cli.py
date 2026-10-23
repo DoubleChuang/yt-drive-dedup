@@ -14,17 +14,20 @@ from typing import Sequence
 from ..application.dedup_service import DedupService, ScanResult
 from ..domain.models import Match, Tier
 from ..errors import YtddError
-from ..infrastructure.credentials import load_credentials, resolve_token_path
+from ..infrastructure.credentials import READ_SCOPES, load_credentials, resolve_token_path
 from ..infrastructure.drive_repository import GoogleDriveRepository
 from ..infrastructure.youtube_repository import GoogleYouTubeRepository
+from . import backup as backup_command
 from .console import ConsoleReporter
 from .csv_report import report_paths, write_matches, write_unmatched
+
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="yt-drive-dedup",
         description="找出 Google Drive 裡已上傳到 YouTube 的重複影片並刪除",
+        epilog="另有 `yt-drive-dedup backup`：把 Drive 的影片上傳到 YouTube 以釋放空間",
     )
     parser.add_argument("--apply", action="store_true", help="真的執行刪除，只處理 STRONG")
     parser.add_argument("--permanent", action="store_true", help="永久刪除，不進垃圾桶")
@@ -40,6 +43,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Dispatch to a subcommand. A bare invocation keeps the original scan behaviour."""
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "backup":
+        return backup_command.run(arguments[1:])
+    if arguments and arguments[0] == "scan":
+        arguments = arguments[1:]
+    return run_scan(arguments)
+
+
+def run_scan(argv: Sequence[str]) -> int:
     args = build_parser().parse_args(argv)
     reporter = ConsoleReporter()
 
@@ -97,7 +110,7 @@ def select_targets(scan: ScanResult, ids: str | None) -> list[Match]:
 
 
 def _build_service(args: argparse.Namespace) -> DedupService:
-    credentials = load_credentials(resolve_token_path(args.token))
+    credentials = load_credentials(resolve_token_path(args.token), READ_SCOPES)
     drive = GoogleDriveRepository(credentials)
     youtube = GoogleYouTubeRepository(credentials)
     return DedupService(drive, youtube, drive)

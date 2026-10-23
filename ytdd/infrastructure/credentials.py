@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Sequence
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -15,8 +16,14 @@ from google.oauth2.credentials import Credentials
 from ..errors import AuthError
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
-YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
-REQUIRED_SCOPES: tuple[str, ...] = (DRIVE_SCOPE, YOUTUBE_SCOPE)
+YOUTUBE_READ_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+
+# Scanning only reads; backing up needs write access to the channel.
+READ_SCOPES: tuple[str, ...] = (DRIVE_SCOPE, YOUTUBE_READ_SCOPE)
+WRITE_SCOPES: tuple[str, ...] = (DRIVE_SCOPE, YOUTUBE_READ_SCOPE, YOUTUBE_UPLOAD_SCOPE)
+# Kept for callers that just want "everything this tool can need".
+REQUIRED_SCOPES: tuple[str, ...] = WRITE_SCOPES
 
 TOKEN_ENV_VAR = "GOOGLE_TOKEN_FILE"
 
@@ -41,7 +48,9 @@ def resolve_token_path(explicit: str | Path | None = None) -> Path:
     return next((c for c in candidates if c.exists()), candidates[-1])
 
 
-def load_credentials(token_path: Path | None = None) -> Credentials:
+def load_credentials(
+    token_path: Path | None = None, required_scopes: Sequence[str] = REQUIRED_SCOPES
+) -> Credentials:
     """Read the token, refresh it if needed, and verify our two scopes are present."""
     path = token_path or resolve_token_path()
     if not path.exists():
@@ -56,7 +65,7 @@ def load_credentials(token_path: Path | None = None) -> Credentials:
     except (ValueError, KeyError) as exc:
         raise AuthError(f"cannot read token at {path}: {exc}") from exc
 
-    _verify_scopes(credentials, path)
+    _verify_scopes(credentials, path, required_scopes)
     if not credentials.valid:
         if credentials.expired and credentials.refresh_token:
             credentials.refresh(Request())
@@ -65,13 +74,13 @@ def load_credentials(token_path: Path | None = None) -> Credentials:
     return credentials
 
 
-def _verify_scopes(credentials: Credentials, path: Path) -> None:
+def _verify_scopes(credentials: Credentials, path: Path, required: Sequence[str]) -> None:
     granted = {s.strip() for s in (credentials.scopes or []) if s.strip()}
     if not granted:
         return  # older tokens omit the field; the API call will tell us
-    missing = [scope for scope in REQUIRED_SCOPES if scope not in granted]
+    missing = [scope for scope in required if scope not in granted]
     if missing:
         raise AuthError(
             f"token at {path} is missing scope(s): {', '.join(missing)}\n"
-            "Delete the token and re-authorize."
+            "Re-authorize to grant them (delete the token and run the auth command again)."
         )
