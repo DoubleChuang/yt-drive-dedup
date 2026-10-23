@@ -1,0 +1,16 @@
+# Google OAuth credentials / tokens - never commit these
+token.json
+.oauth_pending.json
+client_secret*.json
+credentials.json
+
+# Generated reports
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.DS_Store
