@@ -68,3 +68,14 @@ class YouTubeUploader(Protocol):
     def wait_until_processed(self, video_id: str, timeout_s: float) -> bool:
         """True once YouTube finished transcoding; False if it timed out."""
         ...
+
+
+class YouTubePlaylistWriter(Protocol):
+    """Files uploads into a named playlist so backups are not mixed with uploads."""
+
+    def ensure_playlist(self, title: str) -> str:
+        """Return the playlist id, creating the playlist when it does not exist."""
+        ...
+
+    def add_to_playlist(self, playlist_id: str, video_id: str) -> None:
+        ...

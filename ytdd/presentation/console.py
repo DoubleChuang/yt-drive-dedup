@@ -103,7 +103,9 @@ class ConsoleReporter:
 
     # -- backup ---------------------------------------------------------
 
-    def backup_plan(self, plan: BackupPlan, *, quota_uploads: int) -> None:
+    def backup_plan(
+        self, plan: BackupPlan, *, quota_uploads: int, playlist: str | None = None
+    ) -> None:
         self._write()
         self._write("--- 備份計畫 ---")
         self._write(
@@ -115,8 +117,10 @@ class ConsoleReporter:
                 f"疑似已在 YouTube  {len(plan.needs_review)} 支（預設跳過，--include-review 可含）"
             )
         self._write(f"別人分享的        {plan.not_owned} 支（不是你的檔案，不處理）")
+        if playlist:
+            self._write(f"播放清單          {playlist}（不存在會自動建立）")
         self._write(
-            f"每日配額          {quota_uploads} 支（1600 單位/支，預設 10000 單位/日）"
+            f"每日配額          {quota_uploads} 支（上傳 1600 + 清單 50 單位，預設 10000/日）"
         )
 
         if plan.uploadable:
@@ -154,6 +158,8 @@ class ConsoleReporter:
                 self._write(f"  OK   {result.video.name}  ->  https://youtu.be/{result.youtube_id}")
             if result.error:
                 self._write(f"  FAIL {result.video.name}: {result.error}")
+            if result.warning:
+                self._write(f"  WARN {result.video.name}: {result.warning}")
 
     def footer(self, report_path: str) -> None:
         self._write()

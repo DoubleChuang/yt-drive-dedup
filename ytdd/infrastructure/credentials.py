@@ -18,10 +18,17 @@ from ..errors import AuthError
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 YOUTUBE_READ_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
 YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+# Playlists are not covered by youtube.upload; filing uploads needs this.
+YOUTUBE_MANAGE_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
 
 # Scanning only reads; backing up needs write access to the channel.
 READ_SCOPES: tuple[str, ...] = (DRIVE_SCOPE, YOUTUBE_READ_SCOPE)
-WRITE_SCOPES: tuple[str, ...] = (DRIVE_SCOPE, YOUTUBE_READ_SCOPE, YOUTUBE_UPLOAD_SCOPE)
+WRITE_SCOPES: tuple[str, ...] = (
+    DRIVE_SCOPE,
+    YOUTUBE_READ_SCOPE,
+    YOUTUBE_UPLOAD_SCOPE,
+    YOUTUBE_MANAGE_SCOPE,
+)
 # Kept for callers that just want "everything this tool can need".
 REQUIRED_SCOPES: tuple[str, ...] = WRITE_SCOPES
 
@@ -49,10 +56,11 @@ def resolve_token_path(explicit: str | Path | None = None) -> Path:
 
 
 def load_credentials(
-    token_path: Path | None = None, required_scopes: Sequence[str] = REQUIRED_SCOPES
+    token_path: str | Path | None = None,
+    required_scopes: Sequence[str] = REQUIRED_SCOPES,
 ) -> Credentials:
-    """Read the token, refresh it if needed, and verify our two scopes are present."""
-    path = token_path or resolve_token_path()
+    """Read the token, refresh it if needed, and verify the required scopes are present."""
+    path = Path(token_path).expanduser() if token_path else resolve_token_path()
     if not path.exists():
         raise AuthError(
             f"no Google token at {path}\n"

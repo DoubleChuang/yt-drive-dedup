@@ -282,8 +282,10 @@ python -m ytdd backup --keep-drive
 1. 先比對（跟 scan 同一套規則），已確定在 YouTube 上的直接跳過，不浪費配額
 2. 從 Drive 下載到暫存目錄（分塊串流，不會把整個檔案讀進記憶體）
 3. 用可續傳上傳（resumable）送進頻道，預設隱私 `private`
-4. **等 YouTube 回報 `processed` 才刪 Drive 原檔**；逾時或失敗就保留原檔並回報
-5. 刪除只是移到垃圾桶，30 天內可還原
+4. 加入指定的播放清單（預設 `Google Drive 備份上傳`，不存在會自動建立），
+   這樣備份上傳不會跟原本的影片混在一起
+5. **等 YouTube 回報 `processed` 才刪 Drive 原檔**；逾時或失敗就保留原檔並回報
+6. 刪除只是移到垃圾桶，30 天內可還原
 
 預設不會上傳的三種情況：不是你的檔案、STRONG 已確定在 YouTube、REVIEW 疑似在 YouTube（要含進去請加 `--include-review`）。
 
@@ -294,6 +296,8 @@ python -m ytdd backup --keep-drive
 | `--dry-run` | 只列計畫，不上傳不刪除 |
 | `--limit N` | 這次最多上傳幾支（配合每日配額） |
 | `--privacy {private,unlisted,public}` | 上傳後的隱私狀態，預設 `private` |
+| `--playlist NAME` | 上傳後加入的播放清單，預設 `Google Drive 備份上傳` |
+| `--no-playlist` | 不加入任何播放清單 |
 | `--keep-drive` | 上傳後保留 Drive 原檔 |
 | `--include-review` | 連 REVIEW 的檔案也上傳（可能產生重複） |
 | `--process-timeout SEC` | 等轉檔的秒數，預設 900 |
@@ -358,7 +362,8 @@ Drive 網頁 → 垃圾桶 → 勾選檔案 → 還原
 
 - `https://www.googleapis.com/auth/drive`
 - `https://www.googleapis.com/auth/youtube.readonly`
-- `https://www.googleapis.com/auth/youtube.upload`（只有 `backup` 子命令需要）
+- `https://www.googleapis.com/auth/youtube.upload`（`backup` 需要）
+- `https://www.googleapis.com/auth/youtube.force-ssl`（`backup` 把影片加入播放清單需要）
 
 只跑 `scan` 時不會用到上傳權限；若現有 token 沒有 `youtube.upload`，`backup --dry-run` 仍可執行，真正上傳前會提示你重新授權。
 

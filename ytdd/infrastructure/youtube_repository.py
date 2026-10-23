@@ -23,6 +23,7 @@ _DURATION_PATTERN = re.compile(r"P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.
 VIDEO_FIELDS = "snippet,contentDetails,fileDetails,status"
 
 DEFAULT_CATEGORY_ID = "22"  # People & Blogs; required by videos.insert
+DEFAULT_PLAYLIST_PRIVACY = "private"
 UPLOAD_CHUNK_BYTES = 8 << 20
 RETRYABLE_STATUS = {500, 502, 503, 504}
 _QUOTA_REASONS = {
@@ -125,6 +126,62 @@ class GoogleYouTubeRepository:
             raise ApiError(f"上傳 {file_path.name} 沒有回傳 video id")
         return video_id
 
+    # -- playlists ------------------------------------------------------
+
+    def ensure_playlist(self, title: str) -> str:
+        """Find a playlist by title on this channel, creating it when missing."""
+        wanted = title.strip().casefold()
+        page_token: str | None = None
+        try:
+            while True:
+                response = (
+                    self._service.playlists()
+                    .list(part="snippet", mine=True, maxResults=50, pageToken=page_token)
+                    .execute()
+                )
+                for item in response.get("items", []):
+                    if item["snippet"]["title"].strip().casefold() == wanted:
+                        return item["id"]
+                page_token = response.get("nextPageToken")
+                if not page_token:
+                    break
+
+            created = (
+                self._service.playlists()
+                .insert(
+                    part="snippet,status",
+                    body={
+                        "snippet": {"title": title},
+                        "status": {"privacyStatus": DEFAULT_PLAYLIST_PRIVACY},
+                    },
+                )
+                .execute()
+            )
+        except HttpError as exc:
+            raise ApiError(_playlist_error("建立播放清單", exc)) from exc
+
+        playlist_id = created.get("id")
+        if not playlist_id:
+            raise ApiError(f"建立播放清單 {title} 沒有回傳 id")
+        return playlist_id
+
+    def add_to_playlist(self, playlist_id: str, video_id: str) -> None:
+        """Idempotent: a video that is already in the playlist is not an error."""
+        try:
+            self._service.playlistItems().insert(
+                part="snippet",
+                body={
+                    "snippet": {
+                        "playlistId": playlist_id,
+                        "resourceId": {"kind": "youtube#video", "videoId": video_id},
+                    }
+                },
+            ).execute()
+        except HttpError as exc:
+            if exc.resp.status == 409:  # already in this playlist
+                return
+            raise ApiError(_playlist_error("加入播放清單", exc)) from exc
+
     def wait_until_processed(self, video_id: str, timeout_s: float) -> bool:
         """Poll until uploadStatus is 'processed'. False on timeout or a bad status."""
         deadline = time.monotonic() + timeout_s
@@ -184,6 +241,15 @@ class GoogleYouTubeRepository:
             file_size=int(size) if size else None,
             published_at=item["snippet"].get("publishedAt", ""),
         )
+
+
+def _playlist_error(action: str, error: HttpError) -> str:
+    if error.resp.status == 403:
+        return (
+            f"{action}失敗：權限不足。播放清單需要 youtube.force-ssl scope，"
+            "請重新授權：python -m ytdd.auth --client-secret ... （會一併要求該權限）"
+        )
+    return f"{action}失敗: {error}"
 
 
 def _is_quota_error(error: HttpError) -> bool:

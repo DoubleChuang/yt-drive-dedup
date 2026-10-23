@@ -22,6 +22,7 @@ from .ports import (
     DriveTrashWriter,
     DriveVideoReader,
     UploadProgress,
+    YouTubePlaylistWriter,
     YouTubeUploadReader,
     YouTubeUploader,
 )
@@ -61,6 +62,7 @@ class UploadResult:
     youtube_id: str | None = None
     source_removed: bool = False
     error: str | None = None
+    warning: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -97,6 +99,7 @@ class BackupService:
         uploader: YouTubeUploader,
         trash_writer: DriveTrashWriter,
         policy: MatchPolicy = DEFAULT_POLICY,
+        playlists: YouTubePlaylistWriter | None = None,
     ) -> None:
         self._drive = drive_reader
         self._fetcher = fetcher
@@ -104,6 +107,7 @@ class BackupService:
         self._uploader = uploader
         self._trash = trash_writer
         self._policy = policy
+        self._playlists = playlists
 
     def plan(self, *, include_review: bool = False) -> BackupPlan:
         """Select owned videos that the channel does not already have.
@@ -140,10 +144,13 @@ class BackupService:
         remove_source: bool = True,
         limit: int | None = None,
         process_timeout_s: float = DEFAULT_PROCESS_TIMEOUT_S,
+        playlist_title: str | None = None,
         on_progress: UploadProgress | None = None,
         on_message=None,
     ) -> BackupReport:
         notify = on_message or (lambda _: None)
+
+        playlist_id = self._open_playlist(playlist_title, notify)
         queue: Sequence[DriveVideo] = plan.uploadable[:limit] if limit else plan.uploadable
         results: list[UploadResult] = []
         stopped_by_quota = False
@@ -157,6 +164,7 @@ class BackupService:
                     privacy=privacy,
                     remove_source=remove_source,
                     process_timeout_s=process_timeout_s,
+                    playlist_id=playlist_id,
                     on_progress=on_progress,
                     notify=notify,
                 )
@@ -173,7 +181,30 @@ class BackupService:
             not_attempted=len(queue) - attempted,
         )
 
+    def _file_into_playlist(self, playlist_id: str | None, video_id: str, notify) -> str | None:
+        if not playlist_id or not self._playlists:
+            return None
+        try:
+            self._playlists.add_to_playlist(playlist_id, video_id)
+        except Exception as exc:  # the video exists; filing it is the only loss
+            notify(f"  加入播放清單失敗：{exc}")
+            return f"加入播放清單失敗: {exc}"
+        notify("  已加入播放清單")
+        return None
+
     # -- internals ------------------------------------------------------
+
+    def _open_playlist(self, title: str | None, notify) -> str | None:
+        """Resolve the target playlist before spending any quota.
+
+        Raising here is deliberate: an upload that lands outside the requested
+        playlist is worse than not uploading at all.
+        """
+        if not title or not self._playlists:
+            return None
+        playlist_id = self._playlists.ensure_playlist(title)
+        notify(f"播放清單: {title} ({playlist_id})")
+        return playlist_id
 
     def _upload_one(
         self,
@@ -183,6 +214,7 @@ class BackupService:
         privacy: str,
         remove_source: bool,
         process_timeout_s: float,
+        playlist_id: str | None,
         on_progress: UploadProgress | None,
         notify,
     ) -> UploadResult:
@@ -200,9 +232,11 @@ class BackupService:
                 on_progress=on_progress,
             )
 
+            warning = self._file_into_playlist(playlist_id, youtube_id, notify)
+
             if not remove_source:
                 notify("  uploaded (Drive 原檔保留)")
-                return UploadResult(video, youtube_id=youtube_id)
+                return UploadResult(video, youtube_id=youtube_id, warning=warning)
 
             notify("  waiting for YouTube to finish processing ...")
             if not self._uploader.wait_until_processed(youtube_id, process_timeout_s):
@@ -211,11 +245,14 @@ class BackupService:
                     video,
                     youtube_id=youtube_id,
                     error="YouTube 尚未處理完成，Drive 原檔保留",
+                    warning=warning,
                 )
 
             self._trash.trash(video.id)
             notify("  已上傳並移除 Drive 原檔（垃圾桶）")
-            return UploadResult(video, youtube_id=youtube_id, source_removed=True)
+            return UploadResult(
+                video, youtube_id=youtube_id, source_removed=True, warning=warning
+            )
         except QuotaExceeded:
             raise
         except Exception as exc:  # one bad file must not abort the batch

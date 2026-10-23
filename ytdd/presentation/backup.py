@@ -25,6 +25,7 @@ from ..infrastructure.youtube_repository import GoogleYouTubeRepository
 from .console import ConsoleReporter
 
 PRIVACY_CHOICES = ("private", "unlisted", "public")
+DEFAULT_PLAYLIST = "Google Drive 備份上傳"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +48,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-review",
         action="store_true",
         help="連 REVIEW（疑似已在 YouTube）的檔案也上傳，可能產生重複",
+    )
+    parser.add_argument(
+        "--playlist",
+        metavar="NAME",
+        default=DEFAULT_PLAYLIST,
+        help=f"上傳後加入的播放清單（不存在會自動建立，預設 {DEFAULT_PLAYLIST}）",
+    )
+    parser.add_argument(
+        "--no-playlist", action="store_true", help="不加入任何播放清單"
     )
     parser.add_argument("--dry-run", action="store_true", help="只列出計畫，不上傳也不刪除")
     parser.add_argument("--work-dir", metavar="DIR", help="下載暫存目錄（預設：系統暫存目錄）")
@@ -73,13 +83,17 @@ def run(argv: Sequence[str]) -> int:
         credentials = load_credentials(token_path, scopes)
         drive = GoogleDriveRepository(credentials)
         youtube = GoogleYouTubeRepository(credentials)
-        service = BackupService(drive, drive, youtube, youtube, drive)
+        service = BackupService(drive, drive, youtube, youtube, drive, playlists=youtube)
         plan = service.plan(include_review=args.include_review)
     except YtddError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    reporter.backup_plan(plan, quota_uploads=uploads_per_day())
+    reporter.backup_plan(
+        plan,
+        quota_uploads=uploads_per_day(),
+        playlist=None if args.no_playlist else args.playlist,
+    )
     if not plan.uploadable:
         return 0
     if args.dry_run:
@@ -96,6 +110,7 @@ def run(argv: Sequence[str]) -> int:
         remove_source=not args.keep_drive,
         limit=args.limit,
         process_timeout_s=args.process_timeout,
+        playlist_title=None if args.no_playlist else args.playlist,
         on_message=reporter.progress,
         on_progress=reporter.upload_progress,
     )

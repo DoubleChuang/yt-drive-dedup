@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ytdd.application.backup_service import BackupService, uploads_per_day
 from ytdd.domain.models import DriveVideo, YouTubeVideo
-from ytdd.errors import QuotaExceeded
+from ytdd.errors import ApiError, QuotaExceeded
 
 
 def drive(**overrides) -> DriveVideo:
@@ -88,10 +88,32 @@ class FakeYouTube:
         return self.videos
 
 
-def build(videos, uploads, *, processed=True, quota_after=None):
+class FakePlaylists:
+    def __init__(self, playlist_id="PL1", fail_add=False, fail_ensure=False):
+        self.playlist_id = playlist_id
+        self.ensured: list[str] = []
+        self.added: list[tuple[str, str]] = []
+        self._fail_add = fail_add
+        self._fail_ensure = fail_ensure
+
+    def ensure_playlist(self, title: str) -> str:
+        if self._fail_ensure:
+            raise ApiError("缺少 youtube.force-ssl scope")
+        self.ensured.append(title)
+        return self.playlist_id
+
+    def add_to_playlist(self, playlist_id: str, video_id: str) -> None:
+        if self._fail_add:
+            raise ApiError("加入播放清單失敗")
+        self.added.append((playlist_id, video_id))
+
+
+def build(videos, uploads, *, processed=True, quota_after=None, playlists=None):
     fake_drive = FakeDrive(videos)
     uploader = FakeUploader(processed=processed, quota_after=quota_after)
-    service = BackupService(fake_drive, fake_drive, FakeYouTube(uploads), uploader, fake_drive)
+    service = BackupService(
+        fake_drive, fake_drive, FakeYouTube(uploads), uploader, fake_drive, playlists=playlists
+    )
     return service, fake_drive, uploader
 
 
@@ -182,6 +204,43 @@ class ExecuteTests(unittest.TestCase):
         filename, title, privacy = uploader.uploads[0]
         self.assertEqual(privacy, "unlisted")
         self.assertEqual(title, "我的影片 final")
+
+
+class PlaylistTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.work = Path(self._tmp.name)
+
+    def test_upload_is_filed_into_the_named_playlist(self) -> None:
+        playlists = FakePlaylists()
+        service, _, _ = build([drive()], [], playlists=playlists)
+        service.execute(service.plan(), work_dir=self.work, playlist_title="Google Drive 備份上傳")
+        self.assertEqual(playlists.ensured, ["Google Drive 備份上傳"])
+        self.assertEqual(playlists.added, [("PL1", "yt1")])
+
+    def test_no_playlist_means_no_playlist_calls(self) -> None:
+        playlists = FakePlaylists()
+        service, _, _ = build([drive()], [], playlists=playlists)
+        service.execute(service.plan(), work_dir=self.work)
+        self.assertEqual(playlists.ensured, [])
+        self.assertEqual(playlists.added, [])
+
+    def test_playlist_failure_keeps_the_upload_but_warns(self) -> None:
+        playlists = FakePlaylists(fail_add=True)
+        service, fake_drive, _ = build([drive()], [], playlists=playlists)
+        report = service.execute(service.plan(), work_dir=self.work, playlist_title="any")
+        self.assertTrue(report.results[0].ok)
+        self.assertIsNotNone(report.results[0].warning)
+        self.assertEqual(fake_drive.trashed, ["d1"])
+
+    def test_missing_scope_aborts_before_spending_quota(self) -> None:
+        playlists = FakePlaylists(fail_ensure=True)
+        service, fake_drive, uploader = build([drive()], [], playlists=playlists)
+        with self.assertRaises(ApiError):
+            service.execute(service.plan(), work_dir=self.work, playlist_title="any")
+        self.assertEqual(uploader.uploads, [])
+        self.assertEqual(fake_drive.downloaded, [])
 
 
 class QuotaTests(unittest.TestCase):
