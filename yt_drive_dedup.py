@@ -36,14 +36,14 @@ _HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 
 
 def resolve_token_path(explicit: str | None = None) -> Path:
+    """--token wins, then $GOOGLE_TOKEN_FILE (authoritative even if missing), then defaults."""
     if explicit:
         return Path(explicit).expanduser()
     env = os.environ.get("GOOGLE_TOKEN_FILE")
-    candidates = [Path(env).expanduser() if env else None,
-                  _HERMES_HOME / "google_token.json",
-                  Path("token.json")]
-    for cand in candidates:
-        if cand and cand.exists():
+    if env:
+        return Path(env).expanduser()
+    for cand in (_HERMES_HOME / "google_token.json", Path("token.json")):
+        if cand.exists():
             return cand
     return Path("token.json")
 
@@ -81,7 +81,8 @@ def load_creds(scopes: list[str], token_path: Path | None = None) -> Credentials
     if not token_path.exists():
         die(
             f"no Google token at {token_path}\n"
-            "Create one first:  python auth.py    (see README.md)"
+            "Create one first with auth.py — local: 'python auth.py', "
+            "Docker: 'docker compose run --rm auth' (see README.md)"
         )
     creds = Credentials.from_authorized_user_file(str(token_path))
     granted = {s.strip() for s in (creds.scopes or []) if s.strip()}
