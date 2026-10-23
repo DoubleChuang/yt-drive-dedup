@@ -1,0 +1,15 @@
+.git
+.gitignore
+.github
+*.csv
+data
+secrets
+token.json
+.oauth_pending.json
+client_secret*.json
+__pycache__
+*.pyc
+.venv
+venv
+README.md
+LICENSE

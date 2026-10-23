@@ -42,16 +42,83 @@ Drive 的每個影片檔會跟頻道上**所有**已上傳影片逐一評分：
 - **只刪你有權刪的檔案。** 別人分享給你的檔案即使內容重複，Google 也不允許你刪（`403 insufficientFilePermissions`），腳本會列出擁有者後跳過。
 - **不做模糊猜測。** 沒有達到 STRONG 的配對一律不動。
 
-## 安裝
+## 快速開始（Docker，推薦）
+
+只需要 Docker 與 Docker Compose，本機不用安裝 Python 或任何套件。
 
 ```bash
 git clone https://github.com/DoubleChuang/yt-drive-dedup.git
 cd yt-drive-dedup
+docker compose build
+```
+
+第一次要先做 Google 授權。把 OAuth client JSON 放進 `secrets/`（該目錄已被 git 忽略）：
+
+```bash
+cp ~/Downloads/client_secret_xxx.apps.googleusercontent.com.json secrets/client_secret.json
+```
+
+授權流程見下方「Google 授權」章節，容器版是：
+
+```bash
+docker compose run --rm auth --client-secret /secrets/client_secret.json
+docker compose run --rm auth --client-secret /secrets/client_secret.json  --code 'http://localhost:1/?code=4/0A...'
+```
+
+拿到 token 之後：
+
+```bash
+docker compose run --rm dedup --owned-only     # 先看報表，什麼都不刪
+docker compose run --rm dedup --explain        # 逐支檢視最接近的候選
+docker compose run --rm dedup --apply          # 確認後刪除 STRONG 那批
+```
+
+`docker compose run` 後面的參數會直接傳給程式，所以 `--owned-only`、`--apply`、`--ids 3,7,9`、`--show-all` 等用法跟本機執行完全一樣。
+
+### 檔案放哪裡
+
+```
+data/                                   ← 掛載成容器的 /data
+├── token.json                          Google 授權（已 gitignore）
+├── yt_drive_dedup_report.csv           配對結果
+└── yt_drive_dedup_unmatched.csv        未配對清單
+secrets/                                ← 唯讀掛載成 /secrets
+└── client_secret.json                  OAuth client（已 gitignore）
+```
+
+`data/` 與 `secrets/` 都以 `.gitkeep` 保留在 repo 裡，所以 clone 下來目錄就存在、擁有者是你本人。若改成自己手動建目錄，Docker 會用 root 建立，非特權容器就寫不進去。
+
+### 檔案權限
+
+容器以你的 UID/GID 執行，產出的檔案不會變成 root 所有。預設 `1000:1000`，帳號不是 1000 的話：
+
+```bash
+LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) docker compose run --rm dedup --owned-only
+```
+
+或寫進 `.env`：
+
+```
+LOCAL_UID=1001
+LOCAL_GID=1001
+```
+
+### 容器細節
+
+- 基底映像 `python:3.12-slim`，只安裝 `requirements.txt` 的三個套件
+- 以非特權使用者 `app`（uid 1000）執行，映像內不跑 root
+- `./data` 可寫、`./secrets` 唯讀，不對外開 port
+- 不需要 Dockerfile 以外的建置步驟，`docker compose build` 一次到底
+
+## 本機執行（不想用 Docker 的話）
+
+```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-需要 Python 3.10 以上。
+需要 Python 3.10 以上。後面的授權與用法把 `docker compose run --rm auth ...` 換成 `python auth.py ...`、
+`docker compose run --rm dedup ...` 換成 `python yt_drive_dedup.py ...` 即可。
 
 ## 第一次使用：Google 授權
 
@@ -72,8 +139,11 @@ pip install -r requirements.txt
 ### 2. 產生 token
 
 ```bash
-# 步驟一：取得授權網址
+# 本機
 python auth.py --client-secret ~/Downloads/client_secret_xxx.json
+
+# Docker（client secret 已放進 secrets/）
+docker compose run --rm auth --client-secret /secrets/client_secret.json
 ```
 
 開啟印出來的網址，登入並勾選兩個權限：
@@ -86,17 +156,24 @@ python auth.py --client-secret ~/Downloads/client_secret_xxx.json
 授權完成後瀏覽器會跳到 `http://localhost:1/?code=...` 並顯示無法連線，**這是預期的**。把網址列整條複製下來：
 
 ```bash
-# 步驟二：換成 token.json
+# 本機
 python auth.py --client-secret ~/Downloads/client_secret_xxx.json \
+  --code 'http://localhost:1/?code=4/0A...&scope=...'
+
+# Docker
+docker compose run --rm auth --client-secret /secrets/client_secret.json \
   --code 'http://localhost:1/?code=4/0A...&scope=...'
 ```
 
-完成後目錄下會有 `token.json`（權限 600，`token.json` 已在 `.gitignore` 內，不會被 commit）。
+完成後會產生 `token.json`（權限 600）：本機版在執行目錄，Docker 版在 `./data/token.json`。
+兩者都已被 `.gitignore` 排除，不會被 commit。
 
 token 的尋找順序：
 `--token` 參數 > 環境變數 `GOOGLE_TOKEN_FILE` > `~/.hermes/google_token.json` > `./token.json`
 
 ## 使用方法
+
+Docker 版把下面的 `python yt_drive_dedup.py` 換成 `docker compose run --rm dedup` 即可，參數完全相同。
 
 ```bash
 # 1. 先看報表，什麼都不刪（預設行為）
@@ -170,6 +247,8 @@ Drive 網頁 → 垃圾桶 → 勾選檔案 → 還原
 | `403 Access Not Configured` | Cloud Console 沒啟用 Drive API 或 YouTube Data API v3 |
 | `403 access_denied` | 帳號沒被加進 test users，到 <https://console.cloud.google.com/auth/audience> 加入 |
 | `quotaExceeded` | YouTube Data API 每日額度用盡，隔天再跑 |
+| 容器寫入 `./data` 權限錯誤 | `./data` 被建立成 root 所有。`sudo chown -R $(id -u):$(id -g) data`，並確認 `LOCAL_UID`/`LOCAL_GID` 與你一致 |
+| `docker compose` 說 build context 太大 | 確認 `.dockerignore` 存在；它會排除 `.git`、產出的 CSV 與 `data/`、`secrets/` |
 
 ## 授權範圍
 

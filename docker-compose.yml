@@ -1,0 +1,30 @@
+# Usage (no local Python needed):
+#   1. put the OAuth client JSON in ./secrets/  (gitignored)
+#   2. docker compose run --rm auth --client-secret /secrets/<file>.json
+#   3. docker compose run --rm dedup --owned-only
+#
+# Both services share the ./data volume: token.json and the CSV reports land there.
+
+x-base: &base
+  build: .
+  image: yt-drive-dedup:latest
+  working_dir: /data
+  user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+  volumes:
+    - ./data:/data
+
+services:
+  dedup:
+    <<: *base
+    entrypoint: ["python", "/app/yt_drive_dedup.py"]
+    environment:
+      GOOGLE_TOKEN_FILE: /data/token.json
+    command: ["--help"]
+
+  auth:
+    <<: *base
+    entrypoint: ["python", "/app/auth.py"]
+    volumes:
+      - ./data:/data
+      - ./secrets:/secrets:ro
+    command: ["--out", "/data/token.json"]

@@ -29,7 +29,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/youtube.readonly",
 ]
-PENDING = Path(".oauth_pending.json")
+
+
+def pending_path(out: Path) -> Path:
+    """Pending session lives next to the token, so it works when /app is read-only."""
+    return out.parent / ".oauth_pending.json"
 
 
 def die(msg: str) -> None:
@@ -37,7 +41,7 @@ def die(msg: str) -> None:
     sys.exit(1)
 
 
-def get_auth_url(client_secret: Path) -> str:
+def get_auth_url(client_secret: Path, pending: Path) -> str:
     from google_auth_oauthlib.flow import Flow
 
     flow = Flow.from_client_secrets_file(
@@ -45,20 +49,20 @@ def get_auth_url(client_secret: Path) -> str:
         autogenerate_code_verifier=True,
     )
     url, state = flow.authorization_url(access_type="offline", prompt="consent")
-    PENDING.write_text(
+    pending.write_text(
         json.dumps({"state": state, "code_verifier": flow.code_verifier}), encoding="utf-8"
     )
     return url
 
 
-def exchange(client_secret: Path, code_or_url: str, out: Path) -> None:
+def exchange(client_secret: Path, code_or_url: str, out: Path, pending: Path) -> None:
     from google_auth_oauthlib.flow import Flow
     from urllib.parse import parse_qs, urlparse
 
-    if not PENDING.exists():
+    if not pending.exists():
         die("no pending session — run step 1 (--client-secret) again")
 
-    pending = json.loads(PENDING.read_text(encoding="utf-8"))
+    state_file = json.loads(pending.read_text(encoding="utf-8"))
     granted = list(SCOPES)
     code = code_or_url
     if code_or_url.startswith("http"):
@@ -66,7 +70,7 @@ def exchange(client_secret: Path, code_or_url: str, out: Path) -> None:
         if "code" not in params:
             die("that URL has no ?code= parameter — copy the whole address bar")
         state = (params.get("state") or [""])[0]
-        if state and state != pending["state"]:
+        if state and state != state_file["state"]:
             die("state mismatch — the URL is from an older attempt, run step 1 again")
         code = params["code"][0]
         scope_val = (params.get("scope") or [""])[0].strip()
@@ -75,7 +79,7 @@ def exchange(client_secret: Path, code_or_url: str, out: Path) -> None:
 
     flow = Flow.from_client_secrets_file(
         str(client_secret), scopes=granted, redirect_uri=REDIRECT_URI,
-        state=pending["state"], code_verifier=pending["code_verifier"],
+        state=state_file["state"], code_verifier=state_file["code_verifier"],
     )
     os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
     flow.fetch_token(code=code)
@@ -84,7 +88,7 @@ def exchange(client_secret: Path, code_or_url: str, out: Path) -> None:
     payload["scopes"] = list(flow.credentials.granted_scopes or granted)
     out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     out.chmod(0o600)
-    PENDING.unlink(missing_ok=True)
+    pending.unlink(missing_ok=True)
 
     missing = [s for s in SCOPES if s not in payload["scopes"]]
     print(f"OK: token written to {out.resolve()}")
@@ -101,17 +105,20 @@ def main() -> None:
     ap.add_argument("--out", default="token.json", help="where to write the token (default: token.json)")
     args = ap.parse_args()
 
+    out = Path(args.out).expanduser()
+    pending = pending_path(out)
+
     if args.client_secret and not args.code:
         secret = Path(args.client_secret).expanduser()
         if not secret.exists():
             die(f"client secret not found: {secret}")
-        print(get_auth_url(secret))
+        print(get_auth_url(secret, pending))
         return
 
     if args.code:
         if not args.client_secret:
             die("--code also needs --client-secret (same file as step 1)")
-        exchange(Path(args.client_secret).expanduser(), args.code, Path(args.out).expanduser())
+        exchange(Path(args.client_secret).expanduser(), args.code, out, pending)
         return
 
     ap.print_help()
