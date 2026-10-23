@@ -287,7 +287,20 @@ docker compose run --rm dedup backup --limit 6     # 上傳今天額度內的 6 
 
 `videos.insert` 每支影片花 **1600 配額單位**，新 Project 每天 **10,000 單位** → **一天 6 支**。超過就是 `quotaExceeded`，工具會停下來並告訴你還有幾支沒跑，隔天再執行即可（已上傳的不會重做）。
 
-要一次跑完就得提高配額：Cloud Console → `APIs & Services` → `YouTube Data API v3` → `Quotas` → `Queries per day` → 申請調整。以 39 支計，大約需要 62,400 單位。
+配額的歸屬要搞清楚，不然會算錯：
+
+| 項目 | 說明 |
+|---|---|
+| 歸屬單位 | **Google Cloud 專案**，不是 Google 帳號、也不是 YouTube 頻道 |
+| 共用範圍 | 同一個專案底下的所有 token、所有機器、所有使用者共用同一池 |
+| 重置時間 | 每天**太平洋時間午夜**（台灣時間夏令 15:00／冬令 16:00） |
+| 查用量 | Cloud Console → `APIs & Services` → `YouTube Data API v3` → `Quotas` |
+
+所以換一組 OAuth 授權並不會多出配額；只有換一個 Cloud 專案才會。但為了繞過配額而多開專案違反 API 服務條款，正規做法是申請提高：
+
+Cloud Console → `APIs & Services` → `YouTube Data API v3` → `Quotas` → `Queries per day` → 申請調整。以 39 支計，大約需要 62,400 單位。
+
+另外還有一個**跟 API 配額無關**的限制：YouTube 對每個頻道每天的「上傳支數」另有上限（依帳號信譽而定，新帳號較低）。就算 API 配額調高，撞到這個上限一樣會上傳失敗，只是錯誤訊息不同。
 
 ### 上傳流程與安全設計
 
