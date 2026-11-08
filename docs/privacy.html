@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>隱私權政策 · DeleteDuplicateVideo</title>
+<style>
+  :root { --fg:#1a1a1a; --muted:#5b6470; --line:#e5e7eb; --accent:#2563eb; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#fff; color:var(--fg);
+         font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:56px 24px 80px; }
+  h1 { font-size:28px; margin:0 0 4px; }
+  h2 { font-size:18px; margin:34px 0 10px; }
+  p, li { margin:0 0 12px; }
+  ul { padding-left:22px; }
+  .updated { color:var(--muted); font-size:14px; margin-bottom:32px; }
+  table { width:100%; border-collapse:collapse; margin:14px 0 18px; font-size:14px; }
+  th, td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:#f9fafb; font-weight:600; }
+  footer { margin-top:52px; padding-top:20px; border-top:1px solid var(--line);
+           color:var(--muted); font-size:13px; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>隱私權政策</h1>
+<p class="updated">Privacy Policy · 最後更新：2026 年 11 月 8 日</p>
+
+<p>
+  本隱私權政策說明 <b>DeleteDuplicateVideo</b>（以下稱「本應用程式」）如何存取、使用、儲存與保護
+  Google 使用者資料。本應用程式為<b>個人自用工具</b>，僅供其擁有者（以下稱「使用者」）本人的
+  Google 帳號使用，不對外提供服務，也沒有其他使用者。
+</p>
+
+<h2>1. 取得的資料與用途</h2>
+<p>本應用程式僅在使用者本人授權後，存取下列資料，且用途嚴格限於該功能：</p>
+<table>
+  <tr><th>Google 服務</th><th>權限</th><th>存取內容</th><th>用途</th></tr>
+  <tr>
+    <td>Google Drive</td>
+    <td><code>drive</code></td>
+    <td>使用者自己 Drive 中的影片檔案及其中繼資料（檔名、大小、影片長度）</td>
+    <td>比對是否與 YouTube 已上傳影片重複；經使用者確認後將重複檔移至垃圾桶</td>
+  </tr>
+  <tr>
+    <td>YouTube</td>
+    <td><code>youtube.readonly</code></td>
+    <td>使用者自己頻道的已上傳影片清單、標題與長度</td>
+    <td>作為重複比對的依據</td>
+  </tr>
+  <tr>
+    <td>Gmail</td>
+    <td><code>gmail.readonly</code>、<code>gmail.modify</code>、<code>gmail.send</code></td>
+    <td>使用者信箱中的信件標題、寄件者、內文摘要</td>
+    <td>產生每日重要信件摘要、貼上分類標籤；寄送功能僅用於使用者本人指定的通知</td>
+  </tr>
+  <tr>
+    <td>Google Calendar</td>
+    <td><code>calendar</code></td>
+    <td>使用者自己的行程</td>
+    <td>彙整每日摘要</td>
+  </tr>
+</table>
+
+<h2>2. 資料的儲存與保留</h2>
+<ul>
+  <li>所有資料僅儲存在<b>使用者自己的電腦</b>上（本機檔案與本機瀏覽器授權憑證）。</li>
+  <li>本應用程式<b>沒有</b>任何遠端伺服器、雲端資料庫或分析服務。</li>
+  <li>授權憑證（OAuth token）保存在使用者電腦的 <code>~/.hermes/google_token.json</code>，可隨時刪除。</li>
+  <li>使用者可隨時撤銷授權：<a href="https://myaccount.google.com/permissions">Google 帳號權限頁面</a>。</li>
+</ul>
+
+<h2>3. 資料的分享</h2>
+<p>
+  本應用程式<b>不會</b>將 Google 使用者資料出售、出租、轉讓或提供給任何第三方，
+  也不會用於廣告、行銷、信用評估或任何與上述用途無關的目的。
+  資料不會被人工閱讀，除非使用者自己為了除錯而查看本機輸出。
+</p>
+
+<h2>4. 資料傳輸</h2>
+<p>
+  本應用程式直接在使用者電腦與 Google API 之間傳輸資料（HTTPS）。
+  除了 Google 官方 API 之外，不會把資料傳送到任何其他端點。
+</p>
+
+<h2>5. Google API Services User Data Policy 遵循聲明</h2>
+<p>
+  本應用程式對 Google API 所取得資訊的使用，遵守
+  <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>，
+  包含 <b>Limited Use</b>（限制使用）要求：
+</p>
+<ul>
+  <li>僅為提供本應用程式所述功能而使用資料。</li>
+  <li>不將資料轉移給第三方，除非為提供功能所必要、為遵守法律，或經使用者明確同意。</li>
+  <li>不用於廣告目的。</li>
+  <li>不允許人類閱讀這些資料，除非使用者主動檢視自己的本機輸出、為安全目的（如濫用調查）或為遵守法律。</li>
+</ul>
+
+<h2>6. 兒童隱私</h2>
+<p>本應用程式為個人工具，非供兒童使用，也不會刻意蒐集兒童資料。</p>
+
+<h2>7. 政策變更</h2>
+<p>若本政策有實質變更，將更新本頁最上方的日期。持續使用即代表接受更新後的政策。</p>
+
+<h2>8. 聯絡方式</h2>
+<p>任何與隱私相關的問題，請來信：<a href="mailto:ethan9141@gmail.com">ethan9141@gmail.com</a></p>
+
+<footer>
+  <a href="index.html">回首頁</a> ・ <a href="terms.html">服務條款</a>
+</footer>
+
+</div>
+</body>
+</html>

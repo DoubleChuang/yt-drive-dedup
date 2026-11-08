@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeleteDuplicateVideo — Google Drive 與 YouTube 重複影片清理工具</title>
+<style>
+  :root { --fg:#1a1a1a; --muted:#5b6470; --line:#e5e7eb; --accent:#2563eb; --bg:#ffffff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:56px 24px 80px; }
+  h1 { font-size:30px; margin:0 0 6px; letter-spacing:-.3px; }
+  h2 { font-size:19px; margin:40px 0 10px; }
+  p  { margin:0 0 14px; }
+  .sub { color:var(--muted); font-size:15px; margin-bottom:32px; }
+  ul { margin:0 0 16px; padding-left:22px; }
+  li { margin-bottom:6px; }
+  .links { display:flex; gap:12px; flex-wrap:wrap; margin:28px 0 8px; }
+  .links a { display:inline-block; padding:9px 16px; border:1px solid var(--line);
+             border-radius:8px; color:var(--accent); text-decoration:none; font-size:14px; }
+  .links a:hover { border-color:var(--accent); }
+  footer { margin-top:56px; padding-top:20px; border-top:1px solid var(--line);
+           color:var(--muted); font-size:13px; }
+  code { background:#f3f4f6; padding:2px 5px; border-radius:4px; font-size:13px; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>DeleteDuplicateVideo</h1>
+  <p class="sub">清理 Google Drive 與 YouTube 之間的重複影片・Find and remove duplicate videos between Google Drive and YouTube</p>
+
+  <h2>這個應用程式做什麼</h2>
+  <p>
+    DeleteDuplicateVideo 是一個<b>個人自用</b>的自動化工具。手機、相機與行車記錄器會不斷把影片上傳到
+    Google Drive，其中許多檔案其實早已上傳到 YouTube，兩邊各佔一份儲存空間。
+    這個工具會讀取 Drive 的影片清單與 YouTube 頻道的已上傳影片，比對檔案大小、原始檔名與影片長度，
+    找出「已經在 YouTube 上」的重複檔案，並在使用者確認後把它們移到 Drive 垃圾桶（可復原）。
+  </p>
+  <ul>
+    <li>三個獨立訊號交叉比對：檔案大小、原始上傳檔名、影片長度</li>
+    <li>只有證據達門檻（STRONG）才會動手，其餘列為待人工確認</li>
+    <li>預設只移到垃圾桶，不永久刪除</li>
+    <li>程式在使用者自己的電腦上以 Docker 執行，資料不經過任何第三方伺服器</li>
+  </ul>
+
+  <h2>使用的 Google 權限</h2>
+  <ul>
+    <li><b>Google Drive</b>（唯讀＋檔案修改）：列出影片、讀取檔案中繼資料、把重複檔移到垃圾桶</li>
+    <li><b>YouTube</b>（唯讀）：讀取自己頻道的已上傳影片清單與長度</li>
+    <li><b>Gmail</b>（讀取／修改／寄送）：產生每日重要信件摘要，僅供帳號本人使用</li>
+    <li><b>Google Calendar</b>：讀取行程以彙整每日摘要</li>
+  </ul>
+  <p>所有授權僅供帳號本人使用，不會提供給其他使用者，也不會將 Google 使用者資料傳送給第三方。</p>
+
+  <div class="links">
+    <a href="privacy.html">隱私權政策 · Privacy Policy</a>
+    <a href="terms.html">服務條款 · Terms of Service</a>
+    <a href="https://github.com/DoubleChuang/yt-drive-dedup">原始碼 · GitHub</a>
+  </div>
+
+  <footer>
+    聯絡方式：<a href="mailto:ethan9141@gmail.com">ethan9141@gmail.com</a><br>
+    DeleteDuplicateVideo・個人專案，非商業服務
+  </footer>
+
+</div>
+</body>
+</html>
